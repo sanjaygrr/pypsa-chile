@@ -10,7 +10,7 @@ import pandas as pd
 
 from . import __version__
 from .config import period
-from .fetch import load_capacity, load_generation, load_manifest
+from .fetch import load_capacity, load_generation, load_manifest, years_needed
 from .network import available_by_zone, build_network, dispatch_by_zone, prices, solve, summarize_flows
 from .validate import compare
 
@@ -23,6 +23,14 @@ def _write_multi(df: pd.DataFrame, path: Path) -> None:
 
 def read_multi(path: Path) -> pd.DataFrame:
     return pd.read_csv(path, header=[0, 1], index_col=0, parse_dates=True)
+
+
+def used_sources(cfg: dict, data_dir: Path) -> dict:
+    """Manifest entries of the raw files behind this run only."""
+    urls = {cfg["sources"]["capacity_by_region"]}
+    gen_urls = {int(k): v for k, v in cfg["sources"]["generation_by_unit"].items()}
+    urls |= {gen_urls[y] for y in years_needed(cfg) if y in gen_urls}
+    return {k: v for k, v in load_manifest(data_dir).items() if v["url"] in urls}
 
 
 def run(cfg: dict, data_dir: Path, out_dir: Path) -> dict:
@@ -48,6 +56,7 @@ def run(cfg: dict, data_dir: Path, out_dir: Path) -> dict:
     n.links_t.p0.to_csv(out_dir / "flows.csv", index_label="time")
     summarize_flows(n).to_csv(out_dir / "flows_summary.csv", index_label="link")
     info["capacity"].to_csv(out_dir / "capacity.csv", index_label="zone")
+    info["capacity_effective"].to_csv(out_dir / "capacity_effective.csv", index_label="zone")
     result["carrier_metrics"].to_csv(out_dir / "carrier_metrics.csv", index_label="carrier")
     result["zone_metrics"].to_csv(out_dir / "zone_metrics.csv", index_label="zone")
 
@@ -61,7 +70,7 @@ def run(cfg: dict, data_dir: Path, out_dir: Path) -> dict:
         "load_shedding_gwh": result["load_shedding_gwh"],
         "model_curtailment_gwh": {k: float(v) for k, v in result["model_curtailment_gwh"].items()},
         "notes": info["notes"],
-        "sources": load_manifest(data_dir),
+        "sources": used_sources(cfg, data_dir),
         "config": cfg,
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False, default=str),

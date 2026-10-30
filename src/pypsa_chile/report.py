@@ -24,6 +24,7 @@ COLORS = {
     "gas": "#d1495b",
     "other_thermal": "#8d6a9f",
     "diesel": "#7a1e1e",
+    "battery": "#2bb3a3",
     "load_shedding": "#ff00ff",
 }
 ORDER = list(COLORS)
@@ -32,7 +33,7 @@ LABELS = {
     "solar": "Solar PV", "csp": "Concentrated solar", "wind": "Wind",
     "hydro_ror": "Hydro, run-of-river", "hydro_reservoir": "Hydro, reservoir",
     "geothermal": "Geothermal", "coal": "Coal", "gas": "Natural gas",
-    "other_thermal": "Other thermal", "diesel": "Diesel", "load_shedding": "Unserved load",
+    "other_thermal": "Other thermal", "diesel": "Diesel", "battery": "Battery discharge", "load_shedding": "Unserved load",
 }
 
 
@@ -162,13 +163,14 @@ def build_report(results_dir: Path, out_path: Path | None = None) -> Path:
     carrier_metrics = pd.read_csv(results_dir / "carrier_metrics.csv", index_col=0)
     zone_metrics = pd.read_csv(results_dir / "zone_metrics.csv", index_col=0)
     capacity = pd.read_csv(results_dir / "capacity.csv", index_col=0)
+    effective = pd.read_csv(results_dir / "capacity_effective.csv", index_col=0)
     prices = pd.read_csv(results_dir / "prices.csv", index_col=0, parse_dates=True)
     flows = pd.read_csv(results_dir / "flows.csv", index_col=0, parse_dates=True)
     flows_summary = pd.read_csv(results_dir / "flows_summary.csv", index_col=0)
 
-    total = carrier_metrics["observed_gwh"].sum()
-    abs_err = (carrier_metrics["simulated_gwh"] - carrier_metrics["observed_gwh"]).abs().sum()
-    mix_error = 100 * abs_err / (2 * total) if total else float("nan")
+    obs_share = carrier_metrics["observed_gwh"] / carrier_metrics["observed_gwh"].sum()
+    sim_share = carrier_metrics["simulated_gwh"] / carrier_metrics["simulated_gwh"].sum()
+    mix_error = 100 * 0.5 * (sim_share - obs_share).abs().sum()
 
     cfg = summary["config"]
     metric_fmt = {"observed_gwh": ",.1f", "simulated_gwh": ",.1f", "bias_mw": ",.0f", "mae_mw": ",.0f",
@@ -206,7 +208,7 @@ def build_report(results_dir: Path, out_path: Path | None = None) -> Path:
 {len(cfg['zones'])} zones, solved with HiGHS. Installed capacity from the CEN year-end {summary['capacity_year']} table.</p>
 <div class="kpis">
 <div class="kpi"><span class="muted">Demand (observed gross generation)</span><b>{summary['demand_gwh']:,.1f} GWh</b></div>
-<div class="kpi"><span class="muted">Mix error (half the sum of |sim − obs| energy)</span><b>{mix_error:.1f}%</b></div>
+<div class="kpi"><span class="muted">Mix distance (half the sum of |share sim − share obs|)</span><b>{mix_error:.1f}%</b></div>
 <div class="kpi"><span class="muted">Unserved energy in the model</span><b>{summary['load_shedding_gwh']:,.2f} GWh</b></div>
 <div class="kpi"><span class="muted">Objective</span><b>{summary['objective_usd'] / 1e6:,.1f} M USD</b></div>
 </div>
@@ -216,8 +218,10 @@ def build_report(results_dir: Path, out_path: Path | None = None) -> Path:
 <div class="card">{fig_html[1]}</div>
 <div class="card">{_table(carrier_metrics, metric_fmt, "technology")}
 <p class="muted">MAE, RMSE and bias in MW over hourly values; nMAE is MAE over the mean observed output.
-Solar, wind and run-of-river use the observed output as availability, so their error only reflects
-curtailment by the model. Reservoir hydro and CSP are capped at their observed energy for the period.</p></div>
+This is a backtest conditioned on observed renewables: solar, wind and run-of-river use the observed
+output as availability, so their error only reflects curtailment by the model, and reservoir hydro and CSP
+are capped at their observed energy for the period. The independent test is on thermal dispatch and on the
+timing of reservoir hydro.</p></div>
 <div class="card">{fig_html[2]}</div>
 
 <h2>Zones</h2>
@@ -234,10 +238,13 @@ already removed from the availability profiles. Real curtailment is published se
 (monthly "Reducciones de Energía" reports) and is not compared in this version.</p></div>
 
 <h2>Inputs and assumptions</h2>
-<div class="card"><h3>Installed capacity used (MW)</h3>{_table(capacity, {c: ',.0f' for c in capacity.columns}, 'zone')}</div>
-<div class="card"><h3>Technologies</h3>{_table(costs, {'marginal_cost': ',.1f'}, 'carrier')}
+<div class="card"><h3>Installed capacity, CEN year-end {summary['capacity_year']} (MW)</h3>{_table(capacity, {c: ',.0f' for c in capacity.columns}, 'zone')}
+<h3>Capacity in the model (MW)</h3>{_table(effective, {c: ',.0f' for c in effective.columns}, 'zone')}
+<p class="muted">Differs from the CEN table where the observed output exceeds it (see notes). Run-of-river and
+reservoir hydro share one capacity per zone.</p></div>
+<div class="card"><h3>Technologies</h3>{_table(costs, {'marginal_cost': ',.1f'}, 'technology')}
 <p class="muted">Marginal costs (USD/MWh) are assumptions that set the merit order, not CEN declared costs.
-Thermal availability and must-run are taken from the {cfg['thermal_availability']['window_days']} days before the
+Thermal availability and minimum output are taken from the {cfg['thermal_availability']['window_days']} days before the
 period (maximum output, and the {cfg['thermal_availability'].get('must_run_quantile')} quantile of output).</p></div>
 <div class="card"><h3>Demand shares</h3>{_table(shares, {'share': '.3f'}, 'zone')}
 <h3>Corridors</h3>{_table(links, {'mw': ',.0f'}, 'from')}</div>
