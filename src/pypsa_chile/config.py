@@ -54,6 +54,14 @@ def validate_config(cfg: dict) -> None:
             raise ValueError(f"transmission link {a}-{b} references an unknown zone")
         if cap < 0:
             raise ValueError(f"transmission link {a}-{b} has negative capacity")
+    seen: dict[str, str] = {}
+    for zone, regions in cfg["zones"].items():
+        for region in regions:
+            if region in seen:
+                raise ValueError(f"region {region} is in zones {seen[region]} and {zone}")
+            seen[region] = zone
+    if cfg["thermal_availability"].get("method") != "trailing_max":
+        raise ValueError("thermal_availability.method: only 'trailing_max' is implemented")
     q = cfg["thermal_availability"].get("must_run_quantile")
     if q is not None and not 0 <= q <= 1:
         raise ValueError("thermal_availability.must_run_quantile must be between 0 and 1, or null")

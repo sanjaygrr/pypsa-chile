@@ -80,6 +80,9 @@ def build_network(cfg: dict, gen: pd.DataFrame, cap: pd.DataFrame) -> tuple[pyps
     if len(missing):
         raise ValueError(f"{len(missing)} hours of the period have no observed data, first: {missing[0]}")
     obs = obs_all.loc[snapshots]
+    outside = [c for c in obs.columns if c[0] == "unassigned"]
+    outside_mwh = float(obs[outside].sum().sum()) if outside else 0.0
+    obs = obs.drop(columns=outside)
 
     year = capacity_year(cfg)
     capacity = capacity_by_zone(cap, cfg, year)
@@ -95,7 +98,7 @@ def build_network(cfg: dict, gen: pd.DataFrame, cap: pd.DataFrame) -> tuple[pyps
     notes: list[str] = []
     n = pypsa.Network()
     n.set_snapshots(snapshots)
-    for carrier in list(cfg["carriers"]) + ["load_shedding", "AC", "DC"]:
+    for carrier in list(cfg["carriers"]) + ["load_shedding", "AC", "transport"]:
         n.add("Carrier", carrier)
 
     demand = obs.T.groupby(level="carrier").sum().T.sum(axis=1)
@@ -152,6 +155,9 @@ def build_network(cfg: dict, gen: pd.DataFrame, cap: pd.DataFrame) -> tuple[pyps
                                  "in the look-back window; that peak is used as capacity.")
                 if p_nom <= 0:
                     continue
+                if peak <= 0 and o.max() > 0:
+                    notes.append(f"{name}: no output in the look-back window, so it is unavailable in "
+                                 f"the model, but {o.sum() / 1e3:.1f} GWh were observed in the period.")
                 avail = min(1.0, peak / p_nom)
                 must_run = 0.0
                 if must_run_q is not None and len(lb):
@@ -180,19 +186,21 @@ def build_network(cfg: dict, gen: pd.DataFrame, cap: pd.DataFrame) -> tuple[pyps
                       marginal_cost=float(cfg["carriers"]["hydro_reservoir"]["marginal_cost"]))
 
     for a, b, s_nom in cfg["transmission"]["links"]:
-        n.add("Link", f"{a}-{b}", bus0=a, bus1=b, carrier="DC", p_nom=float(s_nom), p_min_pu=-1.0,
+        n.add("Link", f"{a}-{b}", bus0=a, bus1=b, carrier="transport", p_nom=float(s_nom), p_min_pu=-1.0,
               efficiency=1.0)
 
-    unassigned = [c for c in obs.columns if c[0] == "unassigned"]
-    if unassigned:
-        energy = obs[unassigned].sum().sum()
-        notes.append(f"{energy:.0f} MWh of observed generation is in regions outside every zone; "
-                     "it is counted in demand and in the observed totals only.")
+    if outside_mwh:
+        notes.append(f"{outside_mwh:.0f} MWh of observed generation is in regions outside every zone; "
+                     "it is left out of demand and of the comparison.")
+
+    gens = n.generators[n.generators["carrier"] != "load_shedding"]
+    effective = gens.pivot_table(index="bus", columns="carrier", values="p_nom", aggfunc="max")
 
     info = {
         "observed": obs,
         "demand": demand,
         "capacity": capacity,
+        "capacity_effective": effective.reindex(list(cfg["zones"])).fillna(0.0),
         "capacity_year": year,
         "notes": notes,
     }
@@ -202,7 +210,7 @@ def build_network(cfg: dict, gen: pd.DataFrame, cap: pd.DataFrame) -> tuple[pyps
 def solve(n: pypsa.Network, cfg: dict) -> None:
     solver = cfg["solver"]
     status, condition = n.optimize(solver_name=solver["name"], solver_options=solver.get("options", {}))
-    if status != "ok":
+    if status != "ok" or condition != "optimal":
         raise RuntimeError(f"optimisation failed: {status} / {condition}")
 
 

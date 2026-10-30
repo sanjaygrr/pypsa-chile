@@ -27,7 +27,9 @@ zones:
   norte_grande: [Arica y Parinacota, Tarapacá, Antofagasta]
   norte_chico: [Atacama, Coquimbo]
   centro: [Valparaíso, Metropolitana, O'Higgins]
-  sur: [Maule, Ñuble, Biobío, La Araucanía, Los Ríos, Los Lagos, Magallanes]
+  sur: [Maule, Ñuble, Biobío, La Araucanía, Los Ríos, Los Lagos]
+# Regions not listed (e.g. Magallanes, an isolated system that appears in some
+# CEN files) are left out of demand and of the comparison.
 
 # Year-end capacity snapshot to use. "auto" takes the last year-end before the
 # simulated period (e.g. 31 Dec 2024 for a week in 2025).
@@ -53,6 +55,14 @@ carrier_map:
   Térmica/Cogeneracion: other_thermal
   Térmica/PetCoke: other_thermal
   Térmica/Térmica: other_thermal
+  # Labels used in the 2024 edition of the file.
+  Solar/(en blanco): solar
+  Eólica/(en blanco): wind
+  Geotérmica/(en blanco): geothermal
+  Bess/(en blanco): battery
+  Bess/Inyección: battery
+  # One unit (Termoandes TV10, gas) has no type or region; zero output in 2024.
+  (en blanco)/(en blanco): gas
 
 capacity_columns:
   Geotérmica: geothermal
@@ -75,6 +85,9 @@ carriers:
   solar: {kind: profile, marginal_cost: 0.0}
   wind: {kind: profile, marginal_cost: 0.0}
   hydro_ror: {kind: profile, marginal_cost: 0.0}
+  # Battery discharge as reported (injection only). Charging is not in the
+  # file, so batteries are treated as a fixed observed profile, not as storage.
+  battery: {kind: profile, marginal_cost: 0.0}
   hydro_reservoir: {kind: budget, marginal_cost: 1.0}
   csp: {kind: budget, marginal_cost: 1.0}
   geothermal: {kind: thermal, marginal_cost: 5.0}
@@ -104,14 +117,17 @@ demand:
   # (includes losses and auxiliary consumption; see README).
   # Zonal split, as a fraction of system demand.
   zone_shares:
-    # source: CEN-hist_ventas_de_energia.xlsx, 2016 SING sales (16,960 GWh)
-    # over total sales (67,416 GWh). The former SING covers this zone. 2016 is
-    # the last year with SIC/SING reported separately.
-    norte_grande: 0.252
-    # assumption: no public zonal demand series without credentials was found.
+    # source: CEN-hist_ventas_de_energia.xlsx, 2016 sales of the former SING
+    # (16,960 GWh) over total sales (67,416 GWh) = 0.252, rounded. The SING
+    # covered this zone; 2016 is the last year with SIC/SING reported apart.
+    # Sales are annual energy, not coincident hourly demand, and northern
+    # mining load has grown since 2016.
+    norte_grande: 0.25
+    # assumption: no zonal demand series without credentials is used in v0.1.
     norte_chico: 0.10
     centro: 0.40
-    sur: 0.248
+    sur: 0.25
+  # Every zone gets the same hourly shape (the national one).
   # Cost of unserved energy, USD/MWh.
   voll: 3000.0
 

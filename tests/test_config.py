@@ -38,6 +38,8 @@ def test_override_file(tmp_path):
         lambda c: c["carrier_map"].update({"X/Y": "fusion"}),
         lambda c: c["period"].update(start="2025-02-01", end="2025-01-01"),
         lambda c: c["thermal_availability"].update(must_run_quantile=2),
+        lambda c: c["thermal_availability"].update(method="seasonal"),
+        lambda c: c["zones"]["sur"].append("Atacama"),
     ],
 )
 def test_invalid_configs(mutate):

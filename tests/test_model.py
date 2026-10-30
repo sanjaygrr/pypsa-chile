@@ -37,6 +37,24 @@ def test_unmapped_type_raises(cfg, generation):
         observed_by_zone(g, cfg)
 
 
+def test_regions_outside_zones_are_excluded(cfg, generation, capacity):
+    g = generation.copy()
+    extra = g[g["time"] == g["time"].min()].head(1).assign(region="Magallanes", mwh=1000.0)
+    g = pd.concat([g, extra], ignore_index=True)
+    n, info = build_network(cfg, g, capacity)
+    assert "unassigned" not in set(info["observed"].columns.get_level_values("zone"))
+    n0, info0 = build_network(cfg, generation, capacity)
+    assert info["demand"].sum() == pytest.approx(info0["demand"].sum())
+
+
+def test_thermal_bounds_consistent(cfg, generation, capacity):
+    n, info = build_network(cfg, generation, capacity)
+    g = n.generators
+    assert (g["p_min_pu"] <= g["p_max_pu"] + 1e-12).all()
+    thermal = g[g["carrier"].isin(["coal", "gas", "diesel", "other_thermal", "geothermal"])]
+    assert (thermal["p_max_pu"] <= 1).all()
+
+
 def test_build_requires_lookback(cfg, generation, capacity):
     cfg["thermal_availability"]["window_days"] = 30
     with pytest.raises(ValueError, match="window"):
