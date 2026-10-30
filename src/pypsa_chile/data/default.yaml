@@ -1,0 +1,132 @@
+# pypsa-chile default configuration.
+#
+# Every modelling assumption lives in this file. Values marked "assumption"
+# are not taken from a published dataset and should be replaced when a better
+# public source is available. Values marked "source" point to the file they
+# come from.
+
+period:
+  # Simulated window, local time (America/Santiago), inclusive dates.
+  start: "2025-10-06"
+  end: "2025-10-12"
+
+sources:
+  # Hourly gross generation per generating unit, published by the Coordinador
+  # Electrico Nacional (CEN) in "Reportes y Estadisticas". One file per year.
+  # The upload path changes when CEN publishes a new edition, so URLs are kept
+  # here rather than in code.
+  generation_by_unit:
+    2024: https://www.coordinador.cl/wp-content/uploads/2025/04/CEN-hist_gen_de_energia_por_central_2024.xlsx
+    2025: https://www.coordinador.cl/wp-content/uploads/2026/05/CEN-hist_gen_de_energia_por_central_2025.xlsx
+  # Installed capacity (gross max power, MW) by region and technology,
+  # values at 31 December of each year.
+  capacity_by_region: https://www.coordinador.cl/wp-content/uploads/2026/05/CEN-hist_cap_inst_por_region_y_tecno.xlsx
+
+# Zones of the simplified network. Each CEN region is assigned to one zone.
+zones:
+  norte_grande: [Arica y Parinacota, Tarapacá, Antofagasta]
+  norte_chico: [Atacama, Coquimbo]
+  centro: [Valparaíso, Metropolitana, O'Higgins]
+  sur: [Maule, Ñuble, Biobío, La Araucanía, Los Ríos, Los Lagos, Magallanes]
+
+# Year-end capacity snapshot to use. "auto" takes the last year-end before the
+# simulated period (e.g. 31 Dec 2024 for a week in 2025).
+capacity_year: auto
+
+# Mapping from the (Tipo, Subtipo) labels in the CEN generation file to the
+# model carriers. The capacity file uses the same groups (its "Otros Termicos"
+# column covers fuel oil, biomass, biogas, cogeneration and petcoke).
+carrier_map:
+  Solar/Solar: solar
+  Solar/Termosolar: csp
+  Eólica/Eólica: wind
+  Geotérmica/Geotérmica: geothermal
+  Hidráulica/Pasada: hydro_ror
+  Hidráulica/Embalse: hydro_reservoir
+  Térmica/Carbón: coal
+  Térmica/Gas Natural: gas
+  Térmica/Gas Natural Argentino: gas
+  Térmica/Diésel: diesel
+  Térmica/Fuel Oil: other_thermal
+  Térmica/Biomasa: other_thermal
+  Térmica/BioGas: other_thermal
+  Térmica/Cogeneracion: other_thermal
+  Térmica/PetCoke: other_thermal
+  Térmica/Térmica: other_thermal
+
+capacity_columns:
+  Geotérmica: geothermal
+  Termosolar: csp
+  Solar: solar
+  Eólica: wind
+  Gas Natural: gas
+  Carbón: coal
+  Diésel: diesel
+  Otros Térmicos: other_thermal
+  Hidroeléctrica: hydro
+
+# How each carrier is represented.
+#   profile:  available power each hour = observed generation (solar, wind,
+#             run-of-river). The model may curtail but never exceed it.
+#   budget:   dispatchable within capacity, but total energy over the period
+#             is capped at the observed energy (reservoir hydro, CSP).
+#   thermal:  dispatchable within an availability derived from data.
+carriers:
+  solar: {kind: profile, marginal_cost: 0.0}
+  wind: {kind: profile, marginal_cost: 0.0}
+  hydro_ror: {kind: profile, marginal_cost: 0.0}
+  hydro_reservoir: {kind: budget, marginal_cost: 1.0}
+  csp: {kind: budget, marginal_cost: 1.0}
+  geothermal: {kind: thermal, marginal_cost: 5.0}
+  coal: {kind: thermal, marginal_cost: 60.0}
+  gas: {kind: thermal, marginal_cost: 80.0}
+  other_thermal: {kind: thermal, marginal_cost: 100.0}
+  diesel: {kind: thermal, marginal_cost: 220.0}
+# Marginal costs above are in USD/MWh and are an assumption: they only set the
+# merit order (renewables < geothermal < coal < gas < other thermal < diesel).
+# They are not calibrated to CEN declared variable costs.
+
+# Thermal availability. The maximum hourly output observed in the
+# `window_days` before the period start, divided by installed capacity, is
+# used as a per-zone availability factor. This captures retirements, long
+# outages and units in reserve without looking at the simulated week itself.
+thermal_availability:
+  method: trailing_max
+  window_days: 28
+  # Must-run level: this quantile of the hourly output in the same window,
+  # divided by installed capacity, is used as minimum output (p_min_pu).
+  # It stands in for cogeneration, take-or-pay fuel contracts and minimum
+  # stable load, none of which are published per hour. Set to null to disable.
+  must_run_quantile: 0.05
+
+demand:
+  # System demand each hour = total observed gross generation in that hour
+  # (includes losses and auxiliary consumption; see README).
+  # Zonal split, as a fraction of system demand.
+  zone_shares:
+    # source: CEN-hist_ventas_de_energia.xlsx, 2016 SING sales (16,960 GWh)
+    # over total sales (67,416 GWh). The former SING covers this zone. 2016 is
+    # the last year with SIC/SING reported separately.
+    norte_grande: 0.252
+    # assumption: no public zonal demand series without credentials was found.
+    norte_chico: 0.10
+    centro: 0.40
+    sur: 0.248
+  # Cost of unserved energy, USD/MWh.
+  voll: 3000.0
+
+transmission:
+  # Transport model between adjacent zones (no impedances, no losses).
+  # assumption: round corridor ratings, not calibrated. CEN Infotecnica
+  # publishes circuit ratings, but mapping circuits to zone boundaries is left
+  # for a later version.
+  links:
+    - [norte_grande, norte_chico, 3000.0]
+    - [norte_chico, centro, 3000.0]
+    - [centro, sur, 6000.0]
+
+solver:
+  name: highs
+  options:
+    threads: 1
+    output_flag: false
