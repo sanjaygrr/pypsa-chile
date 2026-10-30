@@ -109,9 +109,12 @@ def fetch(cfg: dict, data_dir: Path, force: bool = False) -> list[Path]:
             continue
         raw = download(urls[year], data_dir, force)
         log.info("parsing %s (this takes a few minutes)", raw.name)
-        gen = read_generation_by_unit(raw)
+        gen = read_generation_by_unit(raw, year=year)
         if gen.attrs.get("unknown_regions"):
             log.warning("unrecognised regions: %s", gen.attrs["unknown_regions"])
+        if gen.attrs.get("hour25_mwh"):
+            log.warning("%.0f MWh reported in a 25th hour (end of daylight saving) left out",
+                        gen.attrs["hour25_mwh"])
         gen = gen[gen["time"].dt.year == year]
         gen.to_csv(out, index=False, compression="gzip")
         written.append(out)

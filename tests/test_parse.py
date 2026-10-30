@@ -72,3 +72,43 @@ def test_read_capacity_bad_file(tmp_path):
     wb.save(tmp_path / "empty.xlsx")
     with pytest.raises(ValueError):
         read_capacity_by_region(tmp_path / "empty.xlsx")
+
+
+def test_read_generation_2024_layout():
+    """The 2024 edition uses other column names and dates without a year."""
+    path = FIXTURES / "generation_by_unit_2024_excerpt.xlsx"
+    with pytest.raises(ValueError, match="no year"):
+        read_generation_by_unit(path)
+    df = read_generation_by_unit(path, year=2024)
+    assert df["time"].dt.year.unique().tolist() == [2024]
+    assert "Bess" in set(df["tipo"])
+    assert df.attrs["non_numeric_cells"] == 0
+    assert (df.groupby(["time"]).size() > 0).all()
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("01-ene", dt.date(2024, 1, 1)),
+        ("29-feb", dt.date(2024, 2, 29)),
+        ("01-sept", dt.date(2024, 9, 1)),
+        ("31-dic", dt.date(2024, 12, 31)),
+        ("2025-01-02", dt.date(2025, 1, 2)),
+        ("02-01-2025", dt.date(2025, 1, 2)),
+        (dt.datetime(2025, 3, 4, 0, 0), dt.date(2025, 3, 4)),
+        (45658, dt.date(2025, 1, 1)),
+    ],
+)
+def test_to_date(value, expected):
+    from pypsa_chile.parse import _to_date
+
+    assert _to_date(value, 2024) == expected
+
+
+def test_non_numeric_cells_are_counted():
+    from pypsa_chile.parse import _BadValues, _to_float
+
+    bad = _BadValues()
+    assert _to_float("12,5", bad) == 12.5
+    assert _to_float("#VALUE!", bad) == 0.0
+    assert bad.count == 1 and bad.examples == ["#VALUE!"]

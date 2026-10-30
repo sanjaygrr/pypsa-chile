@@ -22,6 +22,7 @@ RAW = Path("data/raw")
 PROCESSED = Path("data/processed")
 
 GEN_XLSX = RAW / "CEN-hist_gen_de_energia_por_central_2025.xlsx"
+GEN_XLSX_2024 = RAW / "CEN-hist_gen_de_energia_por_central_2024.xlsx"
 CAP_XLSX = RAW / "CEN-hist_cap_inst_por_region_y_tecno.xlsx"
 
 
@@ -47,6 +48,20 @@ def excerpt_generation_xlsx(day: dt.date, per_label: int = 2) -> None:
     out.save(HERE / "generation_by_unit_excerpt.xlsx")
 
 
+def excerpt_generation_xlsx_2024(n_rows: int = 400) -> None:
+    """First rows of the 2024 edition, which uses a different layout."""
+    src = load_workbook(GEN_XLSX_2024, read_only=True, data_only=True)
+    out = Workbook()
+    ws_out = out.active
+    ws_out.title = "Hoja2"
+    for i, row in enumerate(src.worksheets[0].iter_rows(values_only=True)):
+        if i > n_rows:
+            break
+        ws_out.append(list(row))
+    src.close()
+    out.save(HERE / "generation_by_unit_2024_excerpt.xlsx")
+
+
 def excerpt_processed(start: str, end: str) -> None:
     gen = pd.read_csv(PROCESSED / "generation_2025.csv.gz", parse_dates=["time"])
     sel = gen[(gen["time"] >= start) & (gen["time"] < end)]
@@ -57,3 +72,4 @@ if __name__ == "__main__":
     shutil.copy(CAP_XLSX, HERE / "capacity_by_region.xlsx")
     excerpt_processed("2025-10-03", "2025-10-07")
     excerpt_generation_xlsx(dt.date(2025, 10, 6))
+    excerpt_generation_xlsx_2024()
