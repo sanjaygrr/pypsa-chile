@@ -44,8 +44,13 @@ def download(url: str, data_dir: Path, force: bool = False) -> Path:
     raw.mkdir(parents=True, exist_ok=True)
     dest = raw / url.rsplit("/", 1)[-1]
     if dest.exists() and not force:
-        log.info("using cached %s", dest.name)
-        return dest
+        cached_url = load_manifest(data_dir).get(dest.name, {}).get("url")
+        if cached_url is None:
+            log.warning("using cached %s without a recorded source URL", dest.name)
+            return dest
+        if cached_url == url:
+            log.info("using cached %s", dest.name)
+            return dest
     log.info("downloading %s", url)
     tmp = dest.with_suffix(dest.suffix + ".part")
     with requests.get(url, headers={"User-Agent": USER_AGENT}, stream=True, timeout=120) as r:
