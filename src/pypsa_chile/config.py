@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import math
 from importlib import resources
 from pathlib import Path
 
@@ -46,6 +47,16 @@ def validate_config(cfg: dict) -> None:
     shares = cfg["demand"]["zone_shares"]
     if set(shares) != zones:
         raise ValueError(f"demand.zone_shares must list exactly the zones {sorted(zones)}")
+    for zone, share in shares.items():
+        if (
+            isinstance(share, bool)
+            or not isinstance(share, (int, float))
+            or not math.isfinite(share)
+            or share < 0
+        ):
+            raise ValueError(
+                f"demand.zone_shares[{zone!r}] must be a finite, non-negative number"
+            )
     total = sum(shares.values())
     if abs(total - 1.0) > 1e-6:
         raise ValueError(f"demand.zone_shares must sum to 1, got {total:.4f}")
